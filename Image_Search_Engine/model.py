@@ -1,4 +1,7 @@
+import pickle
+import numpy as np
 import tensorflow as tf
+
 
 def model_inputs(image_size):
     '''
@@ -179,3 +182,160 @@ class ImageSearchModel(object):
         self.loss, self.opt = opt_loss(logits=logits,
                                        targets=self.targets,
                                        learning_rate=learning_rate)
+
+def train(model,
+          epochs,
+          drop_rate,
+          batch_size,
+          data,
+          save_dir,
+          saver_delta=0.15):
+    '''
+    The core training function, use this function to train a model.
+
+    :param model: CNN model
+    :param epochs: integer, number of epochs
+    :param drop_rate: float, dropout_rate
+    :param batch_size: integer, number of samples to put through the model at once
+    :param data: tuple, train-test data Example (X_train, y_train, X_test, y_test)
+    :param save_dir: String, path to a folder where model checkpoints will be saved
+    :param saver_delta: float, used to prevent overfitted model to be saved
+    '''
+
+    X_train, y_train, X_val, y_val = data
+
+    # Tensorflow Session
+    config = tf.ConfigProto()
+    config.gpu_options.per_process_gpu_memory_fraction = 0.2
+
+    session = tf.Session(config=config)
+    session.run(tf.global_variables_initializer()) # Initializing global variables of the Tensorflow session
+
+    # Defining a Tensorflow Saver object
+    saver = tf.train.Saver()
+
+    best_val_accuracy = 0
+
+    # Training loop
+    for epoch in range(epochs):
+
+        train_accuracy = []
+        train_loss = []
+
+        for ii in tqdm_notebook(range(len(X_train) // batch_size)):
+            start_id = ii * batch_size
+            end_id = start_id + batch_size
+
+            X_batch = X_train[start_id:end_id]
+            y_batch = y_train[start_id:end_id]
+
+            feed_dict = {model.inputs: X_batch,
+                         model.targets: y_batch,
+                         model.dropout_rate: drop_rate}
+
+            _, t_loss, preds_t = session.run([model.opt, model.loss, model.predictions], feed_dict=feed_dict)
+
+            train_accuracy.append(sparse_accuracy(y_batch, preds_t))
+            train_loss.append(t_loss)
+
+        print("Epoch: {}/{}".format(epoch, epochs),
+              " | Training accuracy: {}".format(np.mean(train_accuracy)),
+              " | Training loss: {}".format(np.mean(train_loss)))
+
+        # Evaluating on Validation set
+        val_accuracy = []
+        val_loss = []
+
+        for ii in tqdm_notebook(range(len(X_val) // batch_size)):
+            start_id = ii * batch_size
+            end_id = start_id + batch_size
+
+            X_batch = X_val[start_id:end_id]
+            y_batch = y_val[start_id:end_id]
+
+            feed_dict = {model.inputs: X_batch,
+                         model.targets: y_batch,
+                         model.dropout_rate: 0.0}
+
+            v_loss, preds_val = session.run([model.loss, model.predictions], feed_dict=feed_dict)
+
+            val_accuracy.append(sparse_accuracy(y_batch, preds_val))
+            val_loss.append(v_loss)
+
+        print("Validation accuracy: {0}, Validation loss: {1}".format(np.mean(val_accuracy), np.mean(val_loss)))
+
+        # Saving the model
+        if np.mean(train_accuracy) > np.mean(val_accuracy):
+            if np.abs(np.mean(train_accuracy) - np.mean(val_accuracy)) <= saver_delta:
+                if np.mean(val_accuracy) >= best_val_accuracy:
+                    best_test_accuracy = np.mean(val_accuracy)
+                    saver.save(session, "{}/model_epochs_{}.ckp".format(save_dir, epoch))
+
+    session.close()
+
+    return None
+
+def create_training_set_vectors(model,
+                                X_train,
+                                y_train,
+                                batch_size,
+                                checkpoint_path,
+                                image_size,
+                                distance="hamming"):
+    '''
+    Creates training set vectors and saves them in a pickle file.
+
+    :param model: CNN model
+    :param X_train: numpy array, loaded training set images
+    :param y_train: numpy array, loaded training set labels
+    :param batch_size: integer, number of samples to put through the model at once
+    :param checkpoint_path: String, path to model checkpoint
+    :param image_size: tuple, single image (height, width)
+    :param distance: String, type of distance metric to be used,
+                             this parameter is used to choose a way how to prepare and save training set vectors
+    '''
+
+    config = tf.ConfigProto() # configuring the tensorflow session
+    config.gpu_options.per_process_gpu_memory_fraction = 0.2 # for a gpu session we have to configure the percentage of gpu memory tensorflow may eat up or else we might run out of memory on the gpu
+    session = tf.Session(config=config)
+    session.run(tf.global_variables_initializer())
+
+    if checkpoint_path != None:
+        saver = tf.train.Saver()
+        saver.restore(session, checkpoint_path)
+
+    dense_2_features = []
+    dense_4_features = []
+
+    for ii in tqdm_notebook(range(len(X_train) // batch_size)):
+        start_id = ii * batch_size
+        end_id = start_id + batch_size
+
+        X_batch = X_train[start_id:end_id]
+
+        feed_dict = {model.inputs: X_batch,
+                     model.dropout_rate: 0.0}
+
+        dense_2, dense_4 = session.run([model.dense_2_features, model.dense_4_features], feed_dict=feed_dict)
+
+        dense_2_features.append(dense_2)
+        dense_4_features.append(dense_4)
+
+    dense_2_features = np.vstack(dense_2_features)
+    dense_4_features = np.vstack(dense_4_features)
+
+    if distance == 'hamming':
+        dense_2_features = np.where(dense_2_features < 0.5, 0, 1)
+        dense_4_features = np.where(dense_4_features < 0.5, 0, 1)
+
+        training_vectors = np.hstack((dense_2_features, dense_4_features))
+
+        with open("hamming_train_vectors.pickle", "wb") as f:
+            pickle.dump(training_vectors, f)
+
+    if distance == "cosine":
+        training_vectors = np.hstack((dense_2_features, dense_4_features))
+        with open("cosine_train_vectors.pickle", "wb") as f:
+            pickle.dump(training_vectors, f)
+
+    return None
