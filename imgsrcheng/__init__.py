@@ -1,3 +1,5 @@
+from pkg_resources import resource_filename
+path_to_resources = resource_filename(__name__, 'resources')
 import imgsrcheng.inference
 #del imgsrcheng.model
 

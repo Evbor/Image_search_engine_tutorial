@@ -1,6 +1,9 @@
 import pickle
 import numpy as np
 import tensorflow as tf
+from tqdm import tqdm_notebook
+from imgsrcheng import path_to_resources as resources
+from imgsrcheng.utils import sparse_accuracy
 
 
 def model_inputs(image_size):
@@ -192,6 +195,8 @@ def train(model,
           saver_delta=0.15):
     '''
     The core training function, use this function to train a model.
+    This function returns the path to the checkpoint file of the best
+    trained model.
 
     :param model: CNN model
     :param epochs: integer, number of epochs
@@ -215,6 +220,7 @@ def train(model,
     saver = tf.train.Saver()
 
     best_val_accuracy = 0
+    best_model_checkpoint = None
 
     # Training loop
     for epoch in range(epochs):
@@ -269,11 +275,12 @@ def train(model,
             if np.abs(np.mean(train_accuracy) - np.mean(val_accuracy)) <= saver_delta:
                 if np.mean(val_accuracy) >= best_val_accuracy:
                     best_test_accuracy = np.mean(val_accuracy)
-                    saver.save(session, "{}/model_epochs_{}.ckp".format(save_dir, epoch))
+                    saver.save(session, os.path.join(save_dir, "model_epochs_{}.ckpt".format(epoch)))
+                    best_model_checkpoint = os.path.join(save_dir, "model_epochs_{}.ckpt".format(epoch))
 
     session.close()
 
-    return None
+    return best_model_checkpoint
 
 def create_training_set_vectors(model,
                                 X_train,
@@ -330,12 +337,12 @@ def create_training_set_vectors(model,
 
         training_vectors = np.hstack((dense_2_features, dense_4_features))
 
-        with open("hamming_train_vectors.pickle", "wb") as f:
+        with open(os.path.join(resources, "pickles", "hamming_train_vectors.pickle"), "wb") as f:
             pickle.dump(training_vectors, f)
 
     if distance == "cosine":
         training_vectors = np.hstack((dense_2_features, dense_4_features))
-        with open("cosine_train_vectors.pickle", "wb") as f:
+        with open(os.path.join(resourcs, "pickles", "cosine_train_vectors.pickle"), "wb") as f:
             pickle.dump(training_vectors, f)
 
-    return None
+    return training_vectors

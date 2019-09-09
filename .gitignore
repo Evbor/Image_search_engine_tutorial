@@ -124,6 +124,9 @@ dmypy.json
 .pyre/
 
 # Custom
-cifar/
-saver/
-*.pickle
+data/
+imgsrcheng/resources/pickles/*.pickle
+imgsrcheng/resources/saver/*
+!imgsrcheng/resources/saver/empty.txt
+static/images/*
+uploads/*
