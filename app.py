@@ -24,7 +24,7 @@ def upload():
 
     for img in request.files.getlist("file"):
         img_name = img.filename
-        destination = "/".join([upload_dir, img_name])
+        destination = os.path.join(upload_dir, img_name)
         img.save(destination)
 
     # inference
